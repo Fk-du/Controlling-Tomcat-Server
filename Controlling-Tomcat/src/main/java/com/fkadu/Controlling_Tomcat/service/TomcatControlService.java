@@ -1,5 +1,6 @@
 package com.fkadu.Controlling_Tomcat.service;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -7,7 +8,12 @@ import java.io.File;
 @Service
 public class TomcatControlService {
 
-    private static final String tomcatBinPath = "C:\\Program Files\\Apache Software Foundation\\Tomcat 11.0\\bin";
+    private final String tomcatsBinPath;
+
+    public TomcatControlService(@Value("${tomcat.bin.path}") String tomcatsBinPath) {
+        this.tomcatsBinPath = tomcatsBinPath;
+    }
+
 
     public String startServer() {
         return runBatchScript("startup.bat");
@@ -20,7 +26,7 @@ public class TomcatControlService {
     private String runBatchScript(String scriptName) {
         try {
             ProcessBuilder pb = new ProcessBuilder("cmd.exe", "/c", scriptName);
-            pb.directory(new File(tomcatBinPath));
+            pb.directory(new File(tomcatsBinPath));
             Process process = pb.start();
             process.waitFor();
             return scriptName + " executed.";

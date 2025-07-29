@@ -1,14 +1,17 @@
 package com.fkadu.Controlling_Tomcat.bot;
 
 import com.fkadu.Controlling_Tomcat.service.*;
+import com.fkadu.Controlling_Tomcat.utils.TelegramBotUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.objects.Document;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
+import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -20,7 +23,8 @@ public class TelegramBot extends TelegramLongPollingBot {
 
     private final String botUsername;
     private final String botToken;
-    private final AuthService authService;
+    private final UserService userService;
+
 
     @Autowired
     private TomcatService tomcatService;
@@ -30,22 +34,24 @@ public class TelegramBot extends TelegramLongPollingBot {
 
     private final TomcatJmxService tomcatJmxService;
     private final TomcatControlService tomcatControlService;
+    private final TelegramBotUtils telegramBotUtils;
 
     private final Map<String, String> userStates = new HashMap<>();
     private final Map<String, String> tempUsernames = new HashMap<>();
     private final Map<String, Boolean> loggedInUsers = new HashMap<>();
+    private final Map<Long, String> userFilePaths = new HashMap<>();
 
     public TelegramBot(
             @Value("${telegram.bot.username}") String botUsername,
-            @Value("${telegram.bot.token}") String botToken,
-            AuthService authService,
+            @Value("${telegram.bot.token}") String botToken, UserService userService,
             TomcatJmxService tomcatJmxService,
-            TomcatControlService tomcatControlService) {
+            TomcatControlService tomcatControlService, TelegramBotUtils telegramBotUtils) {
         this.botUsername = botUsername;
         this.botToken = botToken;
-        this.authService = authService;
+        this.userService = userService;
         this.tomcatJmxService = tomcatJmxService;
         this.tomcatControlService = tomcatControlService;
+        this.telegramBotUtils = telegramBotUtils;
     }
 
     @Override
@@ -60,12 +66,47 @@ public class TelegramBot extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
+        // Handle incoming text messages
         if (update.hasMessage() && update.getMessage().hasText()) {
             String chatId = update.getMessage().getChatId().toString();
             String text = update.getMessage().getText();
             onTextCommand(chatId, text);
         }
 
+        // Handle uploaded .war files
+        if (update.hasMessage() && update.getMessage().hasDocument()) {
+            Long chatIdLong = update.getMessage().getChatId();
+            String chatId = chatIdLong.toString();
+            Document document = update.getMessage().getDocument();
+
+            if ("awaiting_war_file_upload".equals(userStates.get(chatId))) {
+                if (document.getFileName().endsWith(".war")) {
+                    userStates.remove(chatId);
+                    sendText(chatIdLong.toString(), "⏳ Uploading WAR file...");
+
+                    try {
+                        String fileId = document.getFileId();
+                        String filePath = telegramBotUtils.downloadFile(fileId);
+
+                        // 🧠 Save the file path temporarily
+                        userFilePaths.put(chatIdLong, filePath);
+
+                        // ⌨️ Ask the user for the app name
+                        sendText(chatIdLong.toString(), "✅ WAR file uploaded. Now send the app name (e.g., SampleWebApp):");
+                        userStates.put(chatId, "awaiting_app_name");
+
+                    } catch (Exception e) {
+                        sendText(chatIdLong.toString(), "❌ Failed to download WAR file: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                } else {
+                    sendText(chatIdLong.toString(), "⚠️ Invalid file type. Please upload a valid `.war` file.");
+                }
+            }
+        }
+
+
+        // Handle button presses (callbacks)
         if (update.hasCallbackQuery()) {
             String chatId = update.getCallbackQuery().getMessage().getChatId().toString();
             String callback = update.getCallbackQuery().getData();
@@ -99,13 +140,20 @@ public class TelegramBot extends TelegramLongPollingBot {
                 result = tomcatJmxService.getServerStatus();
             }
 
-            // If a recognized action occurred, send result and show full menu again
+            // WAR Deployment Trigger
+            else if (callback.equals("deploy_war")) {
+                userStates.put(chatId, "awaiting_war_file_upload");
+                sendText(chatId, "📤 Please upload a `.war` file to deploy.");
+            }
+
+            // If an action was processed, send result and menu
             if (result != null) {
                 sendText(chatId, result);
-                sendFullMenu(chatId); // 👈 always show both panels again
+                sendFullMenu(chatId);
             }
         }
     }
+
 
     private void sendFullMenu(String chatId) {
         InlineKeyboardMarkup appMenu = menuService.createAppMenu();
@@ -133,26 +181,6 @@ public class TelegramBot extends TelegramLongPollingBot {
                 userStates.put(chatId, "login_username");
                 sendText(chatId, "Enter your username to login:");
             }
-            case "/menu" -> {
-                if (!loggedInUsers.getOrDefault(chatId, false)) {
-                    sendText(chatId, "🔒 Please /login first.");
-                    return;
-                }
-
-                // Combine both app menu and monitoring menu buttons
-                InlineKeyboardMarkup appMenu = menuService.createAppMenu();
-                InlineKeyboardMarkup monitoringMenu = menuService.createMonitoringMenu();
-
-                // Merge both button lists
-                List<List<InlineKeyboardButton>> combinedButtons = new ArrayList<>();
-                combinedButtons.addAll(appMenu.getKeyboard());
-                combinedButtons.addAll(monitoringMenu.getKeyboard());
-
-                InlineKeyboardMarkup combinedMenu = new InlineKeyboardMarkup();
-                combinedMenu.setKeyboard(combinedButtons);
-
-                sendMessageWithKeyboard(chatId, "📋 Tomcat Control Panel (Apps + Monitoring):", combinedMenu);
-            }
             default -> handleUserInput(chatId, text);
         }
     }
@@ -173,7 +201,7 @@ public class TelegramBot extends TelegramLongPollingBot {
             }
             case "register_password" -> {
                 String username = tempUsernames.remove(chatId);
-                String result = authService.registerUser(username, input);
+                String result = userService.register(username, input);
                 sendText(chatId, result);
                 if (result.contains("success")) {
                     loggedInUsers.put(chatId, true);
@@ -187,15 +215,41 @@ public class TelegramBot extends TelegramLongPollingBot {
             }
             case "login_password" -> {
                 String username = tempUsernames.remove(chatId);
-                boolean authenticated = authService.authenticate(username, input);
-                if (authenticated) {
-                    sendText(chatId, "Login successful!");
+                var roles = userService.loginAndGetRoles(username, input);
+
+                if (!roles.isEmpty()) {
                     loggedInUsers.put(chatId, true);
-                    sendFullMenu(chatId);
+                    userStates.remove(chatId);
+
+                    if (roles.contains("ADMIN")) {
+                        sendText(chatId, "✅ Login successful! Welcome, admin.\n\n🛠 Opening control panel...");
+                        sendFullMenu(chatId);
+                    } else if (roles.contains("USER")) {
+                        SendMessage message = new SendMessage();
+                        message.setChatId(chatId);
+                        message.setText("👋 Welcome! Here's your application status:");
+
+                        InlineKeyboardMarkup userMenu = menuService.createUserAppMenu();
+                        message.setReplyMarkup(userMenu);
+
+                        try {
+                            execute(message);
+                        } catch (TelegramApiException e) {
+                            e.printStackTrace(); // or use proper logging
+                        }
+                    }
+                    else {
+                        sendText(chatId, "✅ Login successful, but role unrecognized.");
+                    }
                 } else {
-                    sendText(chatId, "Invalid username or password.");
+                    sendText(chatId, "❌ Invalid username or password.");
+                    userStates.remove(chatId);
                 }
-                userStates.remove(chatId);
+            }
+
+            case "deploy_war" -> {
+                userStates.put(chatId, "awaiting_war_file_upload");
+                sendText(chatId, "📤 Please upload your `.war` file to deploy.");
             }
             default -> sendText(chatId, "Unknown command. Type /start to begin.");
         }

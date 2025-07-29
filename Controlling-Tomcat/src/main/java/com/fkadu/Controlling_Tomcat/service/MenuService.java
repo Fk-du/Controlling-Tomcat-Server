@@ -2,11 +2,9 @@ package com.fkadu.Controlling_Tomcat.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
-import org.telegram.telegrambots.bots.TelegramLongPollingBot;
-import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +16,7 @@ public class MenuService {
     private final TomcatService tomcatService;
 
     public InlineKeyboardMarkup createAppMenu() {
-        List<String> rawApps = tomcatService.listRawAppLines(); // new method to return raw app lines
+        List<String> rawApps = tomcatService.listRawAppLines(); // method returns raw app lines
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
 
         for (String line : rawApps) {
@@ -34,14 +32,18 @@ public class MenuService {
             row.add(buildButton(path, "noop"));
             row.add(buildButton("🔴 Stop", "stop:" + path));
             row.add(buildButton("🟢 Start", "start:" + path));
-
             String statusSymbol = status.equalsIgnoreCase("running") ? "✅ Running" : "⛔ Stopped";
             row.add(buildButton(statusSymbol, "status:" + path));
 
             rows.add(row);
         }
 
-        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+        // ➕ Add Deploy WAR row
+        List<InlineKeyboardButton> deployRow = new ArrayList<>();
+        deployRow.add(buildButton("📦 Deploy WAR", "deploy_war"));
+        rows.add(deployRow);
+
+        return new InlineKeyboardMarkup(rows);
     }
 
     public InlineKeyboardMarkup createMonitoringMenu() {
@@ -58,21 +60,38 @@ public class MenuService {
 
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
+    public InlineKeyboardMarkup createUserAppMenu() {
+        List<String> rawApps = tomcatService.listRawAppLines(); // e.g., /sample:running:...:...
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
 
-    public void sendMonitoringMenu(String chatId, TelegramLongPollingBot bot) {
-        InlineKeyboardMarkup keyboard = createMonitoringMenu();
+        for (String line : rawApps) {
+            if (!line.contains(":")) continue;
 
-        SendMessage message = SendMessage.builder()
-                .chatId(chatId)
-                .text("🛠 Server Monitoring Panel")
-                .replyMarkup(keyboard)
-                .build();
+            String[] parts = line.split(":");
+            if (parts.length < 2) continue;
 
-        try {
-            bot.execute(message);
-        } catch (TelegramApiException e) {
-            e.printStackTrace();
+            String path = parts[0].trim();           // e.g., /sample
+            String status = parts[1].trim();         // e.g., running
+
+            String appName = path.startsWith("/") ? path.substring(1) : path;
+            if (appName.isBlank()) continue; // 🚨 Skip empty app names
+
+            String statusText = status.equalsIgnoreCase("running") ? "✅ Running" : "⛔ Stopped";
+
+            List<InlineKeyboardButton> row = List.of(
+                    buildButton(appName, "noop:" + appName),
+                    buildButton(statusText, "status:" + appName)
+            );
+            rows.add(row);
         }
+
+//        // Add a final row for ➕ Server Status
+//        List<InlineKeyboardButton> statusRow = List.of(
+//                buildButton("📊 Server Status", "serverinfo")
+//        );
+//        rows.add(statusRow);
+
+        return new InlineKeyboardMarkup(rows);
     }
 
     private InlineKeyboardButton buildButton(String text, String callbackData) {
