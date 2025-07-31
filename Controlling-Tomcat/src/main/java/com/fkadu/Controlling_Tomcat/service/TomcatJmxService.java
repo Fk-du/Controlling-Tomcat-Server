@@ -24,20 +24,14 @@ public class TomcatJmxService {
     private final RestTemplate restTemplate = new RestTemplate();
 
     private final String JMX_URL;
-    private final String MANAGER_USER;
-    private final String MANAGER_PASS;
-    private final String DEPLOY_URL;
+
 
     public TomcatJmxService(TomcatControlService tomcatControlService,
-                            @Value("${JMX_URL}") String jmxUrl,
-                            @Value("${tomcat.manager.username}")String managerUser,
-                            @Value("${tomcat.manager.password}")String managerPass,
-                            @Value("${tomcat.manager.url}")String deployUrl) {
+                            @Value("${JMX_URL}") String jmxUrl
+                            ) {
         this.tomcatControlService = tomcatControlService;
         JMX_URL = jmxUrl;
-        MANAGER_USER = managerUser;
-        MANAGER_PASS = managerPass;
-        DEPLOY_URL = deployUrl;
+
     }
 
     private MBeanServerConnection connect() throws Exception {
@@ -93,30 +87,6 @@ public class TomcatJmxService {
             return "⚠️ Failed to get server status: " + e.getMessage();
         }
     }
-
-
-
-    public void deployWarFromFile(Long chatId, String filePath) {
-        try {
-            String appPath = "/SampleWebApp"; // You can later ask user or infer
-            String url = DEPLOY_URL + "/text/deploy?path=" + appPath + "&update=true";
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBasicAuth(MANAGER_USER, MANAGER_PASS);
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-
-            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-            body.add("war", new FileSystemResource(filePath));
-
-            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
-
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.PUT, requestEntity, String.class);
-            sendText(chatId, "✅ Deploy Result:\n" + response.getBody());
-        } catch (Exception e) {
-            sendText(chatId, "❌ Deployment failed: " + e.getMessage());
-        }
-    }
-
 
     private String formatDuration(long uptimeMs) {
         long seconds = uptimeMs / 1000 % 60;

@@ -35,6 +35,7 @@ public class TelegramBot extends TelegramLongPollingBot {
     private final TomcatJmxService tomcatJmxService;
     private final TomcatControlService tomcatControlService;
     private final TelegramBotUtils telegramBotUtils;
+    private final SessionService sessionService;
 
     private final Map<String, String> userStates = new HashMap<>();
     private final Map<String, String> tempUsernames = new HashMap<>();
@@ -45,13 +46,14 @@ public class TelegramBot extends TelegramLongPollingBot {
             @Value("${telegram.bot.username}") String botUsername,
             @Value("${telegram.bot.token}") String botToken, UserService userService,
             TomcatJmxService tomcatJmxService,
-            TomcatControlService tomcatControlService, TelegramBotUtils telegramBotUtils) {
+            TomcatControlService tomcatControlService, TelegramBotUtils telegramBotUtils, SessionService sessionService) {
         this.botUsername = botUsername;
         this.botToken = botToken;
         this.userService = userService;
         this.tomcatJmxService = tomcatJmxService;
         this.tomcatControlService = tomcatControlService;
         this.telegramBotUtils = telegramBotUtils;
+        this.sessionService = sessionService;
     }
 
     @Override
@@ -72,39 +74,6 @@ public class TelegramBot extends TelegramLongPollingBot {
             String text = update.getMessage().getText();
             onTextCommand(chatId, text);
         }
-
-        // Handle uploaded .war files
-        if (update.hasMessage() && update.getMessage().hasDocument()) {
-            Long chatIdLong = update.getMessage().getChatId();
-            String chatId = chatIdLong.toString();
-            Document document = update.getMessage().getDocument();
-
-            if ("awaiting_war_file_upload".equals(userStates.get(chatId))) {
-                if (document.getFileName().endsWith(".war")) {
-                    userStates.remove(chatId);
-                    sendText(chatIdLong.toString(), "⏳ Uploading WAR file...");
-
-                    try {
-                        String fileId = document.getFileId();
-                        String filePath = telegramBotUtils.downloadFile(fileId);
-
-                        // 🧠 Save the file path temporarily
-                        userFilePaths.put(chatIdLong, filePath);
-
-                        // ⌨️ Ask the user for the app name
-                        sendText(chatIdLong.toString(), "✅ WAR file uploaded. Now send the app name (e.g., SampleWebApp):");
-                        userStates.put(chatId, "awaiting_app_name");
-
-                    } catch (Exception e) {
-                        sendText(chatIdLong.toString(), "❌ Failed to download WAR file: " + e.getMessage());
-                        e.printStackTrace();
-                    }
-                } else {
-                    sendText(chatIdLong.toString(), "⚠️ Invalid file type. Please upload a valid `.war` file.");
-                }
-            }
-        }
-
 
         // Handle button presses (callbacks)
         if (update.hasCallbackQuery()) {
@@ -140,12 +109,6 @@ public class TelegramBot extends TelegramLongPollingBot {
                 result = tomcatJmxService.getServerStatus();
             }
 
-            // WAR Deployment Trigger
-            else if (callback.equals("deploy_war")) {
-                userStates.put(chatId, "awaiting_war_file_upload");
-                sendText(chatId, "📤 Please upload a `.war` file to deploy.");
-            }
-
             // If an action was processed, send result and menu
             if (result != null) {
                 sendText(chatId, result);
@@ -174,12 +137,30 @@ public class TelegramBot extends TelegramLongPollingBot {
         switch (text.toLowerCase()) {
             case "/start" -> sendText(chatId, "Welcome! Use /register or /login to proceed.");
             case "/register" -> {
-                userStates.put(chatId, "register_username");
-                sendText(chatId, "Enter username to register:");
+                if (sessionService.isLoggedIn(chatId)) {
+                    sendText(chatId, "❌ You're already registered.");
+                } else {
+                    userStates.put(chatId, "register_username");
+                    sendText(chatId, "Enter username to register:");
+                }
             }
             case "/login" -> {
-                userStates.put(chatId, "login_username");
-                sendText(chatId, "Enter your username to login:");
+                if (sessionService.isLoggedIn(chatId)) {
+                    sendText(chatId, "❌ You're already logged in. Use /logout to log out first.");
+                } else {
+                    userStates.put(chatId, "login_username");
+                    sendText(chatId, "Enter your username to login:");
+                    System.out.println(sessionService.isLoggedIn(chatId));
+                }
+            }
+            case "/logout" ->{
+                boolean success = userService.logout(chatId);
+
+                if (success){
+                    sendText(chatId,"✅ You have been logged out." );
+                } else {
+                    sendText(chatId, "⚠️ You're not logged in.");
+                }
             }
             default -> handleUserInput(chatId, text);
         }
@@ -215,7 +196,7 @@ public class TelegramBot extends TelegramLongPollingBot {
             }
             case "login_password" -> {
                 String username = tempUsernames.remove(chatId);
-                var roles = userService.loginAndGetRoles(username, input);
+                var roles = userService.loginAndGetRoles(chatId, username, input);
 
                 if (!roles.isEmpty()) {
                     loggedInUsers.put(chatId, true);
@@ -247,15 +228,11 @@ public class TelegramBot extends TelegramLongPollingBot {
                 }
             }
 
-            case "deploy_war" -> {
-                userStates.put(chatId, "awaiting_war_file_upload");
-                sendText(chatId, "📤 Please upload your `.war` file to deploy.");
-            }
             default -> sendText(chatId, "Unknown command. Type /start to begin.");
         }
     }
 
-    private void sendText(String chatId, String text) {
+    public void sendText(String chatId, String text) {
         SendMessage msg = SendMessage.builder()
                 .chatId(chatId)
                 .text(text)
@@ -279,4 +256,5 @@ public class TelegramBot extends TelegramLongPollingBot {
             e.printStackTrace();
         }
     }
+
 }

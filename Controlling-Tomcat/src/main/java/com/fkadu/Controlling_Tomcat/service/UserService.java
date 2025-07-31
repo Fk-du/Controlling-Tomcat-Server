@@ -1,11 +1,12 @@
 package com.fkadu.Controlling_Tomcat.service;
 
-import com.fkadu.Controlling_Tomcat.dto.RegisterRequest;
 import com.fkadu.Controlling_Tomcat.model.User;
 import com.fkadu.Controlling_Tomcat.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -13,10 +14,15 @@ import java.util.Set;
 public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final MessageService messageService;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    @Autowired
+    private SessionService sessionService;
+
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,  MessageService messageService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.messageService = messageService;
     }
 
     public String register(String username, String password) {
@@ -26,35 +32,51 @@ public class UserService {
         User user = new User();
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(password));
-        user.getRoles().add("USER");
-
-        userRepository.save(user);
-        return "✅ User registered successfully!";
-    }
-
-    public String registerAdmin(RegisterRequest request) {
-        if (userRepository.existsByUsername(request.getUsername())) {
-            return "❌ Username already taken!";
-        }
-        User user = new User();
-        user.setUsername(request.getUsername());
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.getRoles().add("ADMIN");
 
         userRepository.save(user);
-        return "✅ Admin registered successfully!";
+        return "✅ User registered successfully! Type /login to login";
     }
 
-    public Set<String> loginAndGetRoles(String username, String password) {
-        Optional<User> optionalUser = userRepository.findByUsername(username);
+//    public String registerAdmin(RegisterRequest request) {
+//        if (userRepository.existsByUsername(request.getUsername())) {
+//            return "❌ Username already taken!";
+//        }
+//        User user = new User();
+//        user.setUsername(request.getUsername());
+//        user.setPassword(passwordEncoder.encode(request.getPassword()));
+//        user.getRoles().add("ADMIN");
+//        userRepository.save(user);
+//        return "✅ Admin registered successfully!";
+//    }
 
+    public Set<String> loginAndGetRoles(String chatId, String username, String password) {
+
+        if (sessionService.isLoggedIn(chatId)) {
+
+            messageService.sendText(chatId, "❌ You're already logged in. Use /logout to log out first.");
+            return Set.of();
+        }
+
+        Optional<User> optionalUser = userRepository.findByUsername(username);
         if (optionalUser.isPresent()) {
             User user = optionalUser.get();
             if (passwordEncoder.matches(password, user.getPassword())) {
-                return user.getRoles(); // This returns a Set<String>
+                sessionService.login(chatId, username);
+                return user.getRoles();
             }
         }
         return Set.of(); // Return empty set if login fails
     }
 
+    public boolean logout(String chatId){
+        if (sessionService.isLoggedIn(chatId)){
+            sessionService.logout(chatId);
+            return true;
+        }
+        return false;
+    }
+
 }
+
+

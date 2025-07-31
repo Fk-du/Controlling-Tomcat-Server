@@ -38,10 +38,10 @@ public class MenuService {
             rows.add(row);
         }
 
-        // ➕ Add Deploy WAR row
-        List<InlineKeyboardButton> deployRow = new ArrayList<>();
-        deployRow.add(buildButton("📦 Deploy WAR", "deploy_war"));
-        rows.add(deployRow);
+//        // ➕ Add Deploy WAR row
+//        List<InlineKeyboardButton> deployRow = new ArrayList<>();
+//        deployRow.add(buildButton("📦 Deploy WAR", "deploy_war"));
+//        rows.add(deployRow);
 
         return new InlineKeyboardMarkup(rows);
     }
@@ -60,6 +60,7 @@ public class MenuService {
 
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
+
     public InlineKeyboardMarkup createUserAppMenu() {
         List<String> rawApps = tomcatService.listRawAppLines(); // e.g., /sample:running:...:...
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
@@ -84,12 +85,6 @@ public class MenuService {
             );
             rows.add(row);
         }
-
-//        // Add a final row for ➕ Server Status
-//        List<InlineKeyboardButton> statusRow = List.of(
-//                buildButton("📊 Server Status", "serverinfo")
-//        );
-//        rows.add(statusRow);
 
         return new InlineKeyboardMarkup(rows);
     }
