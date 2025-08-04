@@ -215,6 +215,16 @@ public class TelegramBot extends TelegramLongPollingBot {
                         loggedInUsers.put(chatId.toString(), true);
                         loginStates.remove(chatId);
 
+                        int passwordMessageId = update.getMessage().getMessageId(); // get the message ID
+
+                        // Delete the password message
+                        DeleteMessage delete = new DeleteMessage(chatId.toString(), passwordMessageId);
+                        try {
+                            execute(delete);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+
                         KeyboardRow row1 = new KeyboardRow();
                         row1.add(new KeyboardButton("Server"));
                         row1.add(new KeyboardButton("Apps"));
@@ -234,6 +244,15 @@ public class TelegramBot extends TelegramLongPollingBot {
                         sendTextWithKeyboard(chatId.toString(), "✅ Login successful. Welcome!", mainMenuKeyboard);
 
                     } else {
+                        int passwordMessageId = update.getMessage().getMessageId(); // get the message ID
+
+                        // Delete the password message
+                        DeleteMessage delete = new DeleteMessage(chatId.toString(), passwordMessageId);
+                        try {
+                            execute(delete);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
                         sendText(chatId.toString(), "❌ Incorrect password. Try again.");
                         logService.saveLog("WARN", "Failed login attempt for chatId " + chatId);
 //                        loginStates.remove(chatId);
