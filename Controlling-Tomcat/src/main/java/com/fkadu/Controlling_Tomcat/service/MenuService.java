@@ -38,10 +38,6 @@ public class MenuService {
             rows.add(row);
         }
 
-//        // ➕ Add Deploy WAR row
-//        List<InlineKeyboardButton> deployRow = new ArrayList<>();
-//        deployRow.add(buildButton("📦 Deploy WAR", "deploy_war"));
-//        rows.add(deployRow);
 
         return new InlineKeyboardMarkup(rows);
     }

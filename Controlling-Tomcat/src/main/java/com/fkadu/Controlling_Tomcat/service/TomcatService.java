@@ -39,15 +39,6 @@ public class TomcatService {
         return response.getBody();
     }
 
-    public List<String> listApps() {
-        try {
-            String response = makeTomcatRequest("/text/list");
-            return parseAppList(response);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return Collections.emptyList();
-        }
-    }
 
     public List<String> listRawAppLines() {
         try {

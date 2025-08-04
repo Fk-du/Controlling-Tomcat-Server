@@ -1,10 +1,12 @@
 package com.fkadu.Controlling_Tomcat.service;
 
+import com.fkadu.Controlling_Tomcat.config.AllowedPhonesConfig;
 import com.fkadu.Controlling_Tomcat.model.User;
 import com.fkadu.Controlling_Tomcat.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.telegram.telegrambots.meta.api.objects.Contact;
 
 import java.util.List;
 import java.util.Optional;
@@ -15,66 +17,51 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final MessageService messageService;
+    private final AllowedPhonesConfig allowedPhonesConfig;
 
     @Autowired
     private SessionService sessionService;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,  MessageService messageService) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, MessageService messageService, AllowedPhonesConfig allowedPhonesConfig) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.messageService = messageService;
+        this.allowedPhonesConfig = allowedPhonesConfig;
     }
 
-    public String register(String username, String password) {
-        if (userRepository.existsByUsername(username)) {
-            return "❌ Username already taken!";
-        }
+    public boolean existsBychatId(Long chatId){
+        return userRepository.existsBychatId(chatId);
+    }
+
+    public boolean isAllowedPhone(String phone){
+        Set<String> allowedPhones = allowedPhonesConfig.getPhones();
+        return allowedPhones.contains(phone);
+    }
+
+    public void registerUser(Contact contact, Long chatId, String password){
+
         User user = new User();
-        user.setUsername(username);
+        user.setChatId(chatId);
+        user.setFirstName(contact.getFirstName());
+        user.setLastName(contact.getLastName());
+        user.setPhone(normalizePhone(contact.getPhoneNumber()));
         user.setPassword(passwordEncoder.encode(password));
-        user.getRoles().add("ADMIN");
 
         userRepository.save(user);
-        return "✅ User registered successfully! Type /login to login";
     }
 
-//    public String registerAdmin(RegisterRequest request) {
-//        if (userRepository.existsByUsername(request.getUsername())) {
-//            return "❌ Username already taken!";
-//        }
-//        User user = new User();
-//        user.setUsername(request.getUsername());
-//        user.setPassword(passwordEncoder.encode(request.getPassword()));
-//        user.getRoles().add("ADMIN");
-//        userRepository.save(user);
-//        return "✅ Admin registered successfully!";
-//    }
+    public boolean verifyPassword(Long chatId, String rawPassword) {
+        Optional<User> optional = userRepository.findByChatId(chatId);
+        if (optional.isEmpty()) return false;
 
-    public Set<String> loginAndGetRoles(String chatId, String username, String password) {
-
-        if (sessionService.isLoggedIn(chatId)) {
-
-            messageService.sendText(chatId, "❌ You're already logged in. Use /logout to log out first.");
-            return Set.of();
-        }
-
-        Optional<User> optionalUser = userRepository.findByUsername(username);
-        if (optionalUser.isPresent()) {
-            User user = optionalUser.get();
-            if (passwordEncoder.matches(password, user.getPassword())) {
-                sessionService.login(chatId, username);
-                return user.getRoles();
-            }
-        }
-        return Set.of(); // Return empty set if login fails
+        User user = optional.get();
+        return passwordEncoder.matches(rawPassword, user.getPassword()); // if you're using BCrypt
     }
 
-    public boolean logout(String chatId){
-        if (sessionService.isLoggedIn(chatId)){
-            sessionService.logout(chatId);
-            return true;
-        }
-        return false;
+
+    public String normalizePhone(String phone){
+        if (phone.startsWith("0")) return "+251" + phone.substring(1);
+        return phone.startsWith("+")? phone : "+" + phone;
     }
 
 }
