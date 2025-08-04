@@ -113,16 +113,7 @@ public class TelegramBot extends TelegramLongPollingBot {
                         sendText(chatId.toString(), "⚠️ Password too short. Try again:");
                         return;
                     }
-                    String password = text;
-                    int passwordMessageId = update.getMessage().getMessageId(); // get the message ID
-
-                    // Delete the password message
-                    DeleteMessage delete = new DeleteMessage(chatId.toString(), passwordMessageId);
-                    try {
-                        execute(delete);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+                    removePassword(text, update, chatId);
 
                     passwordBuffer.put(chatId, text);
                     registrationStates.put(chatId, "awaiting_password_confirm");
@@ -132,18 +123,7 @@ public class TelegramBot extends TelegramLongPollingBot {
 
                 if ("awaiting_password_confirm".equals(registrationStates.get(chatId))) {
                     String originalPassword = passwordBuffer.get(chatId);
-
-                    String password = text;
-                    int passwordMessageId = update.getMessage().getMessageId(); // get the message ID
-
-                    // Delete the password message
-                    DeleteMessage delete = new DeleteMessage(chatId.toString(), passwordMessageId);
-                    try {
-                        execute(delete);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-
+                    removePassword(text, update, chatId);
                     if (!text.equals(originalPassword)) {
                         sendText(chatId.toString(), "❌ Passwords do not match. Please retype your password:");
 
@@ -215,15 +195,7 @@ public class TelegramBot extends TelegramLongPollingBot {
                         loggedInUsers.put(chatId.toString(), true);
                         loginStates.remove(chatId);
 
-                        int passwordMessageId = update.getMessage().getMessageId(); // get the message ID
-
-                        // Delete the password message
-                        DeleteMessage delete = new DeleteMessage(chatId.toString(), passwordMessageId);
-                        try {
-                            execute(delete);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
+                        removePassword(text, update, chatId);
 
                         KeyboardRow row1 = new KeyboardRow();
                         row1.add(new KeyboardButton("Server"));
@@ -482,6 +454,19 @@ public class TelegramBot extends TelegramLongPollingBot {
         }
 
         sendText(chatId, "📜 Latest 100 Logs:\n" + message);
+    }
+
+    private void removePassword(String text, Update update, Long chatId){
+        String password = text;
+        int passwordMessageId = update.getMessage().getMessageId(); // get the message ID
+
+        // Delete the password message
+        DeleteMessage delete = new DeleteMessage(chatId.toString(), passwordMessageId);
+        try {
+            execute(delete);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
 
